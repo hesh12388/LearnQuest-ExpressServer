@@ -821,7 +821,8 @@ app.get("/get-objectives/:username/:level_name", async (req, res) => {
                         status: userObjectiveData.status,
                         description: objectiveDetails.description || "No description available",
                         difficulty: objectiveDetails.difficulty || "medium",
-                        points: objectiveDetails.points || 0
+                        points: objectiveDetails.points || 0,
+                        order: objectiveDetails.order || 0,
                     });
                 });
                 
@@ -831,13 +832,68 @@ app.get("/get-objectives/:username/:level_name", async (req, res) => {
         // Wait for all objective detail lookups to complete
         await Promise.all(objectivePromises);
         
-    
+        // Sort objectives by the order field
+        objectives.sort((a, b) => a.order - b.order);
+        
+        console.log(objectives[0]);
         res.status(200).json({
             objectives: objectives
         });
         
     } catch (error) {
         console.error("Error in get-objectives endpoint:", error);
+        console.error("Error stack:", error.stack);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 📌 Update a user's score directly
+app.post("/update-score", async (req, res) => {
+    const { username, score } = req.body;
+    console.log(`Updating score for user: ${username} to: ${score}`);
+
+    if (!username || score === undefined) {
+        return res.status(400).json({ error: "Username and score are required" });
+    }
+
+    // Convert score to number if it's a string
+    const numericScore = Number(score);
+    if (isNaN(numericScore)) {
+        return res.status(400).json({ error: "Score must be a valid number" });
+    }
+
+    try {
+        // Step 1: Find user in the users collection
+        console.log(`Step 1: Finding user: ${username}`);
+        const userRef = db.collection("users").where("username", "==", username);
+        const userSnapshot = await userRef.get();
+
+        if (userSnapshot.empty) {
+            console.log(`User not found: ${username}`);
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Step 2: Update the user's score
+        const userDoc = userSnapshot.docs[0];
+        const userId = userDoc.id;
+        const userData = userDoc.data();
+        const currentScore = userData.score || 0;
+
+        console.log(`Step 2: Updating score from ${currentScore} to ${numericScore}`);
+        await db.collection("users").doc(userId).update({
+            score: numericScore
+        });
+
+        console.log(`Successfully updated score for user: ${username}`);
+
+        res.status(200).json({
+            message: "User score updated successfully",
+            username,
+            previous_score: currentScore,
+            new_score: numericScore
+        });
+    } catch (error) {
+        console.error("Error in update-score endpoint:", error);
         console.error("Error stack:", error.stack);
         res.status(500).json({ error: error.message });
     }
