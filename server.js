@@ -24,6 +24,10 @@ const PORT = process.env.PORT || 5001;
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const { OpenAI } = require('openai');
+const { DataAPIClient } = require("@datastax/astra-db-ts");
+
+// Initialize vector store
+let vectorStore = null;
 
 // Initialize OpenAI for message moderation
 const openai = new OpenAI({
@@ -73,6 +77,10 @@ wss.on('connection', (ws, req) => {
                     // Leave a course chat room
                     handleLeaveCourse(ws);
                     break;
+                case 'rag-chat':
+                    await handleRagChatMessage(ws, data);
+                    break;
+                    
                     
                 default:
                     console.log(`Unknown message type: ${data.type}`);
@@ -92,6 +100,157 @@ wss.on('connection', (ws, req) => {
     });
 });
 
+// Function to initialize the vector store
+async function initVectorStore() {
+    try {
+      console.log("Initializing AstraDB vector store...");
+      
+      // Use the DataAPIClient from @datastax/astra-db-ts
+      const client = new DataAPIClient(process.env.ASTRA_DB_APPLICATION_TOKEN);
+      const db = client.db(process.env.ASTRA_DB_API_ENDPOINT);
+      
+      // Create or get the collection
+      vectorStore = await db.collection("ragchatbot");
+      
+      console.log("Vector store initialized successfully");
+      return true;
+    } catch (error) {
+      console.error("Error initializing vector store:", error);
+      return false;
+    }
+}
+
+// Function to generate embeddings using OpenAI
+async function generateEmbedding(text) {
+  const response = await openai.embeddings.create({
+    model: "text-embedding-ada-002",
+    input: text
+  });
+  return response.data[0].embedding;
+}
+
+  // Function to generate embeddings using OpenAI
+async function handleRagChatMessage(ws, data) {
+    const { message, username } = data;
+    
+    if (!username) {
+        ws.send(JSON.stringify({
+            type: 'error',
+            message: 'You must be logged in to use the chat assistant'
+        }));
+        return;
+    }
+    
+    if (!message || message.trim() === '') {
+        ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Message cannot be empty'
+        }));
+        return;
+    }
+    
+    try {
+        // Check if vector store is initialized
+        if (!vectorStore) {
+            // Try to initialize it
+            const initialized = await initVectorStore();
+            if (!initialized) {
+                throw new Error("Vector store is not available");
+            }
+        }
+        
+        // Generate embedding for the query
+        const queryEmbedding = await generateEmbedding(message);
+        
+        // Search vector store using the embedding
+        const cursor = await vectorStore.find(
+            {}, // Empty filter object since we're using vector search
+            { 
+              sort: { $vector: queryEmbedding }, // Use the embedding in sort with $vector
+              limit: 3,
+              includeSimilarity: true // Include similarity scores in results
+            }
+          );
+
+        // Collect documents from cursor
+        const documents = [];
+        for await (const doc of cursor) {
+            documents.push(doc);
+        }
+        
+        // Extract context from documents
+        let contexts = [];
+        if (documents.length > 0) {
+            contexts = documents.map(doc => {
+                return doc.page_content;
+            });
+        } else {
+            console.log("No relevant documents found");
+            contexts = ["No relevant information found"];
+        }
+        
+        const combinedContext = contexts.join("\n\n");
+     
+        
+        const prompt = `
+            You are a helpful and friendly gaming assistant for the game *LearnQuest*.
+
+            Use the provided context to answer the user's question if it's related to the game. 
+            If the user’s message is a casual greeting, farewell, or thank-you (e.g., "Hey", "Thanks", "Goodbye"), respond politely and appropriately.
+
+            Only if the user is asking a game-related question and the context does **not** contain the answer, say:
+            "I’m not sure based on the current information."
+
+            ---
+            Context:
+            ${combinedContext}
+
+            ---
+            User Message:
+            ${message}
+
+            ---
+            Answer:
+            `;
+
+
+        
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.7,
+        });
+        
+        const assistantResponse = response.choices[0].message.content;
+        
+        // Step 3: Save to database for history
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const messageId = uuidv4();
+        
+        await db.collection("rag_chat_messages").add({
+            id: messageId,
+            username,
+            user_message: message,
+            assistant_response: assistantResponse,
+            timestamp
+        });
+        
+        // Step 4: Send response back to user
+        ws.send(JSON.stringify({
+            type: 'rag-response',
+            id: messageId,
+            message: assistantResponse,
+            timestamp: new Date().toISOString()
+        }));
+        
+    } catch (error) {
+        console.error('Error in RAG chat:', error);
+        ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Failed to process your question'
+        }));
+    }
+}
 
 // Handle message deletion
 async function handleDeleteMessage(ws, data) {
@@ -169,6 +328,44 @@ async function handleDeleteMessage(ws, data) {
         }));
     }
 }
+
+// Get RAG chat history for a specific user
+app.get("/rag-chat-history/:username", async (req, res) => {
+    const { username } = req.params;
+    console.log(`Getting RAG chat history for user: ${username}`);
+    
+    try {
+        // Query the rag_chat_messages collection for this user
+        const messagesRef = db.collection("rag_chat_messages")
+            .where("username", "==", username)
+            .orderBy("timestamp", "desc")
+            .limit(50);
+            
+        const snapshot = await messagesRef.get();
+        
+        if (snapshot.empty) {
+            console.log(`No RAG chat history found for user: ${username}`);
+            return res.status(200).json({ messages: [] });
+        }
+        
+        const messages = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            messages.push({
+                id: data.id,
+                user_message: data.user_message,
+                assistant_response: data.assistant_response,
+                timestamp: data.timestamp.toDate().toISOString()
+            });
+        });
+        
+        console.log(`Returning ${messages.length} RAG chat messages for user: ${username}`);
+        res.status(200).json({ messages: messages.reverse() });
+    } catch (error) {
+        console.error("Error getting RAG chat history:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Handle course join request
 function handleJoinCourse(ws, data) {
@@ -835,7 +1032,6 @@ app.get("/get-objectives/:username/:level_name", async (req, res) => {
         // Sort objectives by the order field
         objectives.sort((a, b) => a.order - b.order);
         
-        console.log(objectives[0]);
         res.status(200).json({
             objectives: objectives
         });
@@ -2082,3 +2278,13 @@ app.post("/complete-objective", async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+// Call initVectorStore during server startup
+initVectorStore()
+  .then((success) => {
+    if (success) {
+      console.log("RAG system ready");
+    } else {
+      console.log("RAG system not available - will try to initialize on first request");
+    }
+  });

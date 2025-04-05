@@ -10,6 +10,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@astrajs/collections": "^0.0.2",
+    "@datastax/astra-db-ts": "^1.5.0",
     "bcrypt": "^5.1.1",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
@@ -18,7 +20,8 @@
     "firebase": "^11.4.0",
     "firebase-admin": "^13.2.0",
     "jsonwebtoken": "^9.0.2",
-    "openai": "^4.89.1",
+    "langchain": "^0.3.20",
+    "openai": "^4.91.1",
     "uuid": "^11.1.0",
     "ws": "^8.18.1"
   }
