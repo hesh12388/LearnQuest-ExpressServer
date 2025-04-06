@@ -3,8 +3,8 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const admin = require("firebase-admin");
+const http = require("http"); // native Node HTTP
 const bcrypt = require("bcrypt");
-
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
 admin.initializeApp({
@@ -16,6 +16,7 @@ const db = admin.firestore();
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+const server = http.createServer(app); // pass Express to HTTP
 
 const PORT = process.env.PORT || 5001;
 
@@ -36,10 +37,7 @@ const openai = new OpenAI({
 
 // Track connected clients by course_id
 const courseClients = {};
-
-// Initialize WebSocket server
-const wss = new WebSocket.Server({ port: 8080 });
-
+const wss = new WebSocket.Server({ server }); // attach WebSocket to same server
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
     console.log('New WebSocket connection established');
