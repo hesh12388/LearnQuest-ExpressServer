@@ -127,6 +127,48 @@ async function generateEmbedding(text) {
   return response.data[0].embedding;
 }
 
+//extract search query keywords for embedding from user query
+async function extractKeywordsForEmbedding(userQuery) {
+    try {
+        const prompt = `
+        You are an assistant that rewrites user questions into clean, focused technical search queries for a programming education game.
+        
+        Your job is to:
+        - Remove filler words and casual phrasing
+        - Focus the query on technical concepts relevant to HTML, CSS, JavaScript, or programming
+        - Use as few words as possible to capture the essential meaning
+        - Output the search query as a short, lowercase phrase (not a full sentence)
+        - If the user input is a greeting or unrelated to programming, return exactly: greeting
+        
+        User input: "${userQuery}"
+        
+        Vector search query:
+        `;
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo", // Using a smaller model for efficiency
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        max_tokens: 60
+      });
+      
+      const extractedKeywords = response.choices[0].message.content.trim();
+      console.log(`Original query: "${userQuery}"`);
+      console.log(`Extracted keywords: "${extractedKeywords}"`);
+      
+      // If we just got "greeting" back, we'll use a default query for general info
+      if (extractedKeywords.toLowerCase() === "greeting") {
+        return "LearnQuest game overview information";
+      }
+      
+      return extractedKeywords;
+    } catch (error) {
+      console.error("Error extracting keywords:", error);
+      // Fallback to original query if extraction fails
+      return userQuery;
+    }
+  }
+  
+
   // Function to generate embeddings using OpenAI
 async function handleRagChatMessage(ws, data) {
     const { message, username } = data;
@@ -157,8 +199,11 @@ async function handleRagChatMessage(ws, data) {
             }
         }
         
+        // Extract keywords for better search
+        const searchQuery = await extractKeywordsForEmbedding(message);
+
         // Generate embedding for the query
-        const queryEmbedding = await generateEmbedding(message);
+        const queryEmbedding = await generateEmbedding(searchQuery);
         
         // Search vector store using the embedding
         const cursor = await vectorStore.find(
@@ -1134,6 +1179,7 @@ app.post("/login", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
 
 // 📌 Buy an item for a user
 app.post("/buy-item", async (req, res) => {
