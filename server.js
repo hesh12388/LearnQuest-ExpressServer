@@ -234,7 +234,7 @@ async function handleRagChatMessage(ws, data) {
         
         const combinedContext = contexts.join("\n\n");
      
-        
+        console.log("Combined context for OpenAI:", combinedContext);
         const prompt = `
             You are a helpful and friendly gaming assistant for the game *LearnQuest*.
 
