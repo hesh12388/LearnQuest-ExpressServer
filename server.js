@@ -2043,6 +2043,10 @@ app.post("/update-level", async (req, res) => {
             updateData.score = score;
         } else {
             console.log(`Keeping existing score ${currentScore} (new score ${score} not higher)`);
+            res.status(400).json({
+                message: "No update needed, current score is higher or equal"
+            });
+            return;
         }
 
         await db.collection("user_levels").doc(userLevelId).update(updateData);
@@ -2269,7 +2273,18 @@ app.post("/complete-objective", async (req, res) => {
 
         const userObjectiveDoc = userObjectiveSnapshot.docs[0];
         const userObjectiveId = userObjectiveDoc.id;
+        const userObjectiveData = userObjectiveDoc.data();
 
+        // Step 2: Check if the objective is already completed
+        console.log("Step 2: Checking if objective is already completed");
+        if (userObjectiveData.status === "completed") {
+            console.log(`Objective ${objective_name} already completed by user: ${username}`);
+            return res.status(400).json({ 
+                error: "Objective already completed",
+                message: "This objective has already been marked as completed"
+            });
+        }
+        
         // Step 2: Update the status of the objective to "completed"
         console.log("Step 2: Updating the objective status to 'completed'");
         await db.collection("user_objectives").doc(userObjectiveId).update({
