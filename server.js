@@ -1274,7 +1274,7 @@ app.post("/buy-item", async (req, res) => {
 
         res.status(201).json({
             message: "Item purchased successfully",
-            remaining_credits: item_type === "Move" ? userGems - itemCost : userCredits - itemCost
+            remaining_credits: item_type === "Boost" ? userGems - itemCost : userCredits - itemCost
         });
     } catch (error) {
         console.error("Error in buy-item endpoint:", error);
