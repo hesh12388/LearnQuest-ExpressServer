@@ -1250,7 +1250,7 @@ app.post("/buy-item", async (req, res) => {
         console.log(`Step 4: Processing purchase transaction`);
         const userDocRef = db.collection("users").doc(userSnapshot.docs[0].id);
 
-        if (item_type === "Move") {
+        if (item_type === "Boost") {
             // Decrement gems for "Move" items
             await userDocRef.update({
                 numGems: admin.firestore.FieldValue.increment(-itemCost)
