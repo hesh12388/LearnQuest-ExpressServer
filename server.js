@@ -1750,6 +1750,220 @@ app.post("/delete-course", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// 📌 Update user metrics
+app.post("/update-metrics", async (req, res) => {
+    const { username, metric_type, context } = req.body;
+    console.log(`Updating metrics for user: ${username}, type: ${metric_type}, context: ${context || "none"}`);
+
+    if (!username || !metric_type) {
+        return res.status(400).json({ error: "Username and metric_type are required" });
+    }
+
+    try {
+        // Step 1: Find user in the users collection
+        console.log(`Step 1: Finding user: ${username}`);
+        const userRef = db.collection("users").where("username", "==", username);
+        const userSnapshot = await userRef.get();
+
+        if (userSnapshot.empty) {
+            console.log(`User not found: ${username}`);
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const userDoc = userSnapshot.docs[0];
+        const userId = userDoc.id;
+
+        // Step 2: Determine which metric to update
+        let updateField = "";
+        let shouldUpdateUserTable = true;
+        
+        switch(metric_type) {
+            case 'leaderboard_view':
+                updateField = "leaderboard_views";
+                break;
+            case 'chat_use':
+                updateField = "chat_uses";
+                break;
+            case 'shop_view':
+                updateField = "shop_views";
+                break;
+            case 'objective_view':
+                updateField = "objective_views";
+                break;
+            case 'achievement_view':
+                updateField = "achievement_views";
+                break;
+            case 'character_customization':
+                updateField = "customization_uses";
+                break;
+            case 'ai_assistant_use':
+                updateField = "assistant_uses";
+                break;
+            case 'level_visit':
+                // Track level visits in user_levels collection
+                shouldUpdateUserTable = false;
+                if (!context) {
+                    return res.status(400).json({ error: "Level name and chapter name are required for level_visit" });
+                }
+                
+                try {
+                    const [level_name, chapter_name] = context.split('|');
+                    if (!level_name || !chapter_name) {
+                        return res.status(400).json({ error: "Context format should be 'level_name|chapter_name'" });
+                    }
+                    
+                    await updateLevelVisits(username, level_name, chapter_name);
+                } catch (error) {
+                    console.error("Error updating level visits:", error);
+                    return res.status(500).json({ error: "Failed to update level visits" });
+                }
+                break;
+                
+            case 'npc_revisit':
+                // Track NPC revisits in user_objectives collection
+                shouldUpdateUserTable = false;
+                if (!context) {
+                    return res.status(400).json({ error: "Objective name is required for npc_revisit" });
+                }
+                
+                try {
+                    const objective_name = context;
+                    await updateNpcVisits(username, objective_name);
+                } catch (error) {
+                    console.error("Error updating NPC visits:", error);
+                    return res.status(500).json({ error: "Failed to update NPC visits" });
+                }
+                break;
+                
+            case 'level_evaluation':
+                // Track evaluation attempts in user_levels collection
+                shouldUpdateUserTable = false;
+                if (!context) {
+                    return res.status(400).json({ error: "Level name and chapter name are required for level_evaluation" });
+                }
+                
+                try {
+                    const [level_name, chapter_name] = context.split('|');
+                    if (!level_name || !chapter_name) {
+                        return res.status(400).json({ error: "Context format should be 'level_name|chapter_name'" });
+                    }
+                    
+                    await updateEvaluationAttempts(username, level_name, chapter_name);
+                } catch (error) {
+                    console.error("Error updating evaluation attempts:", error);
+                    return res.status(500).json({ error: "Failed to update evaluation attempts" });
+                }
+                break;
+                
+            default:
+                return res.status(400).json({ error: "Invalid metric_type" });
+        }
+
+        // Step 3: Update the appropriate metric in users table if applicable
+        if (shouldUpdateUserTable) {
+            console.log(`Step 3: Incrementing ${updateField} for user: ${username}`);
+            
+            const updateData = {};
+            updateData[updateField] = admin.firestore.FieldValue.increment(1);
+            
+            await db.collection("users").doc(userId).update(updateData);
+            
+            res.status(200).json({
+                message: `${metric_type} metric updated successfully`,
+                field_updated: updateField
+            });
+        } else {
+            // For level/NPC/evaluation metrics, we've already updated them in their respective collections
+            res.status(200).json({
+                message: `${metric_type} metric updated successfully`,
+            });
+        }
+    } catch (error) {
+        console.error("Error in update-metrics endpoint:", error);
+        console.error("Error stack:", error.stack);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Helper function to update level visit count
+async function updateLevelVisits(username, level_name, chapter_name) {
+    console.log(`Updating level visits for user: ${username}, level: ${level_name}`);
+    
+    const userLevelRef = db.collection("user_levels")
+        .where("username", "==", username)
+        .where("level_name", "==", level_name)
+        .where("chapter_name", "==", chapter_name);
+    
+    const userLevelSnapshot = await userLevelRef.get();
+    
+    if (userLevelSnapshot.empty) {
+        console.log(`Level not found for user: ${username}, level: ${level_name}`);
+        throw new Error("Level not found for this user");
+    }
+    
+    const userLevelDoc = userLevelSnapshot.docs[0];
+    
+    // Increment the visit_count field (or initialize it if it doesn't exist)
+    await db.collection("user_levels").doc(userLevelDoc.id).update({
+        visit_count: admin.firestore.FieldValue.increment(1)
+    });
+    
+    console.log(`Successfully updated visit count for level: ${level_name}`);
+}
+
+// Helper function to update NPC visit count
+async function updateNpcVisits(username, objective_name) {
+    console.log(`Updating NPC visits for user: ${username}, objective: ${objective_name}`);
+    
+    const userObjectiveRef = db.collection("user_objectives")
+        .where("username", "==", username)
+        .where("objective_name", "==", objective_name);
+    
+    const userObjectiveSnapshot = await userObjectiveRef.get();
+    
+    if (userObjectiveSnapshot.empty) {
+        console.log(`Objective not found for user: ${username}, objective: ${objective_name}`);
+        throw new Error("Objective not found for this user");
+    }
+    
+    const userObjectiveDoc = userObjectiveSnapshot.docs[0];
+    
+    // Increment the npc_visit_count field (or initialize it if it doesn't exist)
+    await db.collection("user_objectives").doc(userObjectiveDoc.id).update({
+        npc_visit_count: admin.firestore.FieldValue.increment(1)
+    });
+    
+    console.log(`Successfully updated NPC visit count for objective: ${objective_name}`);
+}
+
+// Helper function to update evaluation attempt count
+async function updateEvaluationAttempts(username, level_name, chapter_name) {
+    console.log(`Updating evaluation attempts for user: ${username}, level: ${level_name}`);
+    
+    const userLevelRef = db.collection("user_levels")
+        .where("username", "==", username)
+        .where("level_name", "==", level_name)
+        .where("chapter_name", "==", chapter_name);
+    
+    const userLevelSnapshot = await userLevelRef.get();
+    
+    if (userLevelSnapshot.empty) {
+        console.log(`Level not found for user: ${username}, level: ${level_name}`);
+        throw new Error("Level not found for this user");
+    }
+    
+    const userLevelDoc = userLevelSnapshot.docs[0];
+    
+    // Increment the evaluation_attempts field (or initialize it if it doesn't exist)
+    await db.collection("user_levels").doc(userLevelDoc.id).update({
+        evaluation_attempts: admin.firestore.FieldValue.increment(1)
+    });
+    
+    console.log(`Successfully updated evaluation attempts for level: ${level_name}`);
+}
+
+
 // 📌 Complete an achievement for a user
 app.post("/complete-achievement", async (req, res) => {
     const { username, achievement_name } = req.body;
