@@ -131,19 +131,37 @@ async function generateEmbedding(text) {
 async function extractKeywordsForEmbedding(userQuery) {
     try {
         const prompt = `
-        You are an assistant that rewrites user questions into clean, focused technical search queries for a programming education game.
-        
-        Your job is to:
-        - Remove filler words and casual phrasing
-        - Focus the query on technical concepts relevant to HTML, CSS, JavaScript, or programming
-        - Use as few words as possible to capture the essential meaning
-        - Output the search query as a short, lowercase phrase (not a full sentence)
-        - If the user input is a greeting or unrelated to programming, return exactly: greeting
-        
-        User input: "${userQuery}"
-        
-        Vector search query:
-        `;
+            You are an assistant that extracts clean, focused technical search queries from user questions for a programming education game. Focus on HTML, CSS, JavaScript, and web development concepts.
+
+            Instructions:
+            - Remove filler words, casual phrasing, and unnecessary politeness
+            - Keep only the core programming or web-related keywords
+            - Return a short lowercase phrase (2-6 words)
+            - Do NOT return a full sentence
+            - If the input is a pure greeting or totally unrelated to programming, return: greeting
+
+            Examples:
+            User input: "Hey there, can you explain what the anchor tag is for?"
+            → anchor tag html
+
+            User input: "hi just wanted to say this is a cool game!"
+            → greeting
+
+            User input: "how do I center a div using css?"
+            → center div css
+
+            User input: "what is event bubbling in js?"
+            → event bubbling javascript
+
+            User input: "thanks, that makes sense!"
+            → greeting
+
+            Now extract the vector search query for this user input:
+            "${userQuery}"
+
+            Vector search query:
+            `;
+
       const response = await openai.chat.completions.create({
         model: "gpt-3.5-turbo", // Using a smaller model for efficiency
         messages: [{ role: "user", content: prompt }],
