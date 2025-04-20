@@ -236,6 +236,7 @@ async function handleRagChatMessage(ws, data) {
         // Collect documents and filter by similarity threshold
         const documents = [];
         for await (const doc of cursor) {
+            console.log(`Document ID: ${doc.id}, Similarity: ${doc.similarity}`);
             if (doc.similarity >= 0.65) {
             documents.push(doc);
             }
