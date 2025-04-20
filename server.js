@@ -223,33 +223,33 @@ async function handleRagChatMessage(ws, data) {
         // Generate embedding for the query
         const queryEmbedding = await generateEmbedding(searchQuery);
         
-        // Search vector store using the embedding
+       // Search vector store using the embedding
         const cursor = await vectorStore.find(
-            {}, // Empty filter object since we're using vector search
-            { 
-              sort: { $vector: queryEmbedding }, // Use the embedding in sort with $vector
-              limit: 3,
-              includeSimilarity: true // Include similarity scores in results
+            {}, // Empty filter object for vector search
+            {
+            sort: { $vector: queryEmbedding },
+            limit: 4, // Get top 4 results
+            includeSimilarity: true // Include similarity scores
             }
-          );
-
-        // Collect documents from cursor
+        );
+        
+        // Collect documents and filter by similarity threshold
         const documents = [];
         for await (const doc of cursor) {
+            if (doc.similarity >= 0.65) {
             documents.push(doc);
+            }
         }
         
         // Extract context from documents
         let contexts = [];
         if (documents.length > 0) {
-            contexts = documents.map(doc => {
-                return doc.page_content;
-            });
+            contexts = documents.map(doc => doc.page_content);
         } else {
-            console.log("No relevant documents found");
+            console.log("No relevant documents found above threshold");
             contexts = ["No relevant information found"];
         }
-        
+  
         const combinedContext = contexts.join("\n\n");
      
         console.log("Combined context for OpenAI:", combinedContext);
