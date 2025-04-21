@@ -731,7 +731,9 @@ app.post("/register", async (req, res) => {
             score: 0, // Default score for new users
             bestTime: 0,
             numAchievements: 0,
-            numGems: 0
+            numGems: 0,
+            totalGems: 0,
+            totalScore: 0,
         });
 
         // Add default items to user inventory
@@ -793,9 +795,9 @@ app.get("/leaderboard", async (req, res) => {
             // Only include necessary fields for the leaderboard
             leaderboardData.push({
                 username: userData.username,
-                score: userData.score || 0, 
+                score: userData.totalScore || 0, 
                 numAchievements: userData.numAchievements || 0,
-                numGems: userData.numGems || 0
+                numGems: userData.totalGems || 0
             });
         });
 
@@ -2049,7 +2051,8 @@ app.post("/complete-achievement", async (req, res) => {
         const userDoc = userSnapshot.docs[0];
         await db.collection("users").doc(userDoc.id).update({
             numGems: admin.firestore.FieldValue.increment(gemsReward),
-            numAchievements: admin.firestore.FieldValue.increment(1)
+            numAchievements: admin.firestore.FieldValue.increment(1),
+            totalGems: admin.firestore.FieldValue.increment(gemsReward)
         });
 
         console.log(`Updated user ${username}'s gems (+${gemsReward}) and achievement count`);
@@ -2551,7 +2554,8 @@ app.post("/complete-objective", async (req, res) => {
         const userId = userDoc.id;
 
         await db.collection("users").doc(userId).update({
-            score: admin.firestore.FieldValue.increment(objectivePoints)
+            score: admin.firestore.FieldValue.increment(objectivePoints),
+            totalScore: admin.firestore.FieldValue.increment(objectivePoints),
         });
 
         console.log(`User ${username}'s score updated by ${objectivePoints} points`);
