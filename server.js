@@ -2265,14 +2265,7 @@ app.post("/update-level", async (req, res) => {
         const currentLevelData = userLevelDoc.data();
         const currentScore = currentLevelData.score || 0;
 
-            
-        const levelSnapshot = await levelRef.get();
-
-        if (levelSnapshot.empty) {
-            console.log(`Level details not found: ${level_name}`);
-            return res.status(404).json({ error: "Level details not found" });
-        }
-
+        
 
         // Step 2: Update the level entry in the user_levels collection
         console.log("Step 2: Updating the level entry");
@@ -2321,7 +2314,13 @@ app.post("/update-level", async (req, res) => {
             const levelRef = db.collection("levels")
                 .where("level_name", "==", level_name)
                 .where("chapter_name", "==", chapter_name);
-    
+
+            const levelSnapshot = await levelRef.get();
+
+            if (levelSnapshot.empty) {
+                console.log(`Level details not found: ${level_name}`);
+                return res.status(404).json({ error: "Level details not found" });
+            }
             const levelData = levelSnapshot.docs[0].data();
             const levelPoints = levelData.points || 0;
             console.log(`Level points reward: ${levelPoints}`);
