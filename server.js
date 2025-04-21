@@ -2265,6 +2265,15 @@ app.post("/update-level", async (req, res) => {
         const currentLevelData = userLevelDoc.data();
         const currentScore = currentLevelData.score || 0;
 
+            
+        const levelSnapshot = await levelRef.get();
+
+        if (levelSnapshot.empty) {
+            console.log(`Level details not found: ${level_name}`);
+            return res.status(404).json({ error: "Level details not found" });
+        }
+
+
         // Step 2: Update the level entry in the user_levels collection
         console.log("Step 2: Updating the level entry");
         const updateData = {
@@ -2307,6 +2316,34 @@ app.post("/update-level", async (req, res) => {
         // Step 4: If level was completed successfully, unlock the next level
         let nextLevelInfo = null;
         if (!isFailed) {
+
+            console.log("Step 2: Getting level details for points reward");
+            const levelRef = db.collection("levels")
+                .where("level_name", "==", level_name)
+                .where("chapter_name", "==", chapter_name);
+    
+            const levelData = levelSnapshot.docs[0].data();
+            const levelPoints = levelData.points || 0;
+            console.log(`Level points reward: ${levelPoints}`);
+    
+            const wasCompletedBefore = currentLevelData.isCompleted || false;
+
+            if(!wasCompletedBefore) {
+                
+                // Update user's score in users collection
+                const userRef = db.collection("users").where("username", "==", username);
+                const userSnapshot = await userRef.get();
+                
+                if (!userSnapshot.empty) {
+                    const userDoc = userSnapshot.docs[0];
+                    await db.collection("users").doc(userDoc.id).update({
+                        score: admin.firestore.FieldValue.increment(levelPoints),
+                        totalScore: admin.firestore.FieldValue.increment(levelPoints)
+                    });
+                } else {
+                    console.log(`User not found: ${username}`);
+                }
+            }
             console.log("Step 4: Unlocking next level");
             
             // Find the next level in the levels collection
@@ -2340,10 +2377,7 @@ app.post("/update-level", async (req, res) => {
                     
                     console.log(`Unlocked next level: ${nextLevelName} for user: ${username}`);
                     
-                    nextLevelInfo = {
-                        level_name: nextLevelName,
-                        level_number: level_number + 1
-                    };
+                
                 } else {
                     console.log(`Next level user entry not found for: ${nextLevelName}`);
                 }
@@ -2357,15 +2391,6 @@ app.post("/update-level", async (req, res) => {
             message: "Level updated successfully",
         };
         
-        // Include streak_counter in response if it was updated
-        if (streak_counter !== undefined) {
-            response.streak_counter = streak_counter;
-        }
-        
-        // Add next level info if available
-        if (nextLevelInfo) {
-            response.nextLevel = nextLevelInfo;
-        }
 
         res.status(200).json(response);
     } catch (error) {
