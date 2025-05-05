@@ -32,7 +32,7 @@ let vectorStore = null;
 
 // Initialize OpenAI for message moderation
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY, // Add this to your .env file
+    apiKey: process.env.OPENAI_API_KEY, 
 });
 
 // Track connected clients by course_id
